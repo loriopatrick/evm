@@ -7,24 +7,24 @@
 
 extern crate alloc;
 
+use alloc::vec::Vec;
+use std::sync::Arc;
+
+pub use evm_core::*;
+
+pub use crate::context::{CallScheme, Context, CreateScheme};
+pub use crate::handler::{Handler, Transfer};
+pub use crate::interrupt::{Resolve, ResolveCall, ResolveCreate};
+
 mod eval;
 mod context;
 mod interrupt;
 mod handler;
 
-pub use evm_core::*;
-
-pub use crate::context::{CreateScheme, CallScheme, Context};
-pub use crate::interrupt::{Resolve, ResolveCall, ResolveCreate};
-pub use crate::handler::{Transfer, Handler};
-
-use alloc::vec::Vec;
-use alloc::rc::Rc;
-
 macro_rules! step {
 	( $self:expr, $handler:expr, $return:tt $($err:path)?; $($ok:path)? ) => ({
 		if let Some((opcode, stack)) = $self.machine.inspect() {
-			match $handler.pre_validate(&$self.context, opcode, stack) {
+			match $handler.pre_validate(&$self.context, opcode, stack).await {
 				Ok(()) => (),
 				Err(e) => {
 					$self.machine.exit(e.into());
@@ -49,7 +49,7 @@ macro_rules! step {
 				$return $($err)*(Capture::Exit(e))
 			},
 			Err(Capture::Trap(opcode)) => {
-				match eval::eval($self, opcode, $handler) {
+				match eval::eval($self, opcode, $handler).await {
 					eval::Control::Continue => $($ok)?(()),
 					eval::Control::CallInterrupt(interrupt) => {
 						let resolve = ResolveCall::new($self);
@@ -76,21 +76,21 @@ macro_rules! step {
 /// EVM runtime.
 ///
 /// The runtime wraps an EVM `Machine` with support of return data and context.
-pub struct Runtime<'config> {
+pub struct Runtime {
 	machine: Machine,
 	status: Result<(), ExitReason>,
 	return_data_buffer: Vec<u8>,
 	context: Context,
-	_config: &'config Config,
+	_config: Arc<Config>,
 }
 
-impl<'config> Runtime<'config> {
+impl Runtime {
 	/// Create a new runtime with given code and data.
 	pub fn new(
-		code: Rc<Vec<u8>>,
-		data: Rc<Vec<u8>>,
+		code: Arc<Vec<u8>>,
+		data: Arc<Vec<u8>>,
 		context: Context,
-		config: &'config Config,
+		config: Arc<Config>,
 	) -> Self {
 		Self {
 			machine: Machine::new(code, data, config.stack_limit, config.memory_limit),
@@ -107,18 +107,18 @@ impl<'config> Runtime<'config> {
 	}
 
 	/// Step the runtime.
-	pub fn step<'a, H: Handler>(
+	pub async fn step<'a, H: Handler>(
 		&'a mut self,
 		handler: &mut H,
-	) -> Result<(), Capture<ExitReason, Resolve<'a, 'config, H>>> {
+	) -> Result<(), Capture<ExitReason, Resolve<'a, H>>> {
 		step!(self, handler, return Err; Ok)
 	}
 
 	/// Loop stepping the runtime until it stops.
-	pub fn run<'a, H: Handler>(
+	pub async fn run<'a, H: Handler>(
 		&'a mut self,
 		handler: &mut H,
-	) -> Capture<ExitReason, Resolve<'a, 'config, H>> {
+	) -> Capture<ExitReason, Resolve<'a, H>> {
 		loop {
 			step!(self, handler, return;)
 		}

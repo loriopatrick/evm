@@ -5,8 +5,21 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
-extern crate core;
 extern crate alloc;
+extern crate core;
+
+use alloc::vec::Vec;
+use core::ops::Range;
+use std::sync::Arc;
+
+use primitive_types::U256;
+
+pub use crate::error::{Capture, ExitError, ExitFatal, ExitReason, ExitRevert, ExitSucceed, Trap};
+use crate::eval::{Control, eval};
+pub use crate::memory::Memory;
+pub use crate::opcode::{ExternalOpcode, Opcode};
+pub use crate::stack::Stack;
+pub use crate::valids::Valids;
 
 mod memory;
 mod stack;
@@ -16,24 +29,12 @@ mod error;
 mod eval;
 mod utils;
 
-pub use crate::memory::Memory;
-pub use crate::stack::Stack;
-pub use crate::valids::Valids;
-pub use crate::opcode::{Opcode, ExternalOpcode};
-pub use crate::error::{Trap, Capture, ExitReason, ExitSucceed, ExitError, ExitRevert, ExitFatal};
-
-use core::ops::Range;
-use alloc::vec::Vec;
-use alloc::rc::Rc;
-use primitive_types::U256;
-use crate::eval::{eval, Control};
-
 /// Core execution layer for EVM.
 pub struct Machine {
 	/// Program data.
-	data: Rc<Vec<u8>>,
+	data: Arc<Vec<u8>>,
 	/// Program code.
-	code: Rc<Vec<u8>>,
+	code: Arc<Vec<u8>>,
 	/// Program counter.
 	position: Result<usize, ExitReason>,
 	/// Return value.
@@ -58,8 +59,8 @@ impl Machine {
 
 	/// Create a new machine with given code and data.
 	pub fn new(
-		code: Rc<Vec<u8>>,
-		data: Rc<Vec<u8>>,
+		code: Arc<Vec<u8>>,
+		data: Arc<Vec<u8>>,
 		stack_limit: usize,
 		memory_limit: usize
 	) -> Self {

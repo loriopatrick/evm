@@ -1,5 +1,6 @@
-use std::rc::Rc;
-use evm_core::{Machine, Capture, ExitSucceed};
+use std::sync::Arc;
+
+use evm_core::{Capture, ExitSucceed, Machine};
 
 macro_rules! ret_test {
 	( $name:ident, $code:expr, $data:expr, $ret:expr ) => (
@@ -8,7 +9,7 @@ macro_rules! ret_test {
 			let code = hex::decode($code).unwrap();
 			let data = hex::decode($data).unwrap();
 
-			let mut vm = Machine::new(Rc::new(code), Rc::new(data), 1024, 10000);
+			let mut vm = Machine::new(Arc::new(code), Arc::new(data), 1024, 10000);
 			assert_eq!(vm.run(), Capture::Exit(ExitSucceed::Returned.into()));
 			assert_eq!(vm.return_value(), hex::decode($ret).unwrap());
 		}

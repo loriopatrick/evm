@@ -1,8 +1,11 @@
-use alloc::vec::Vec;
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use std::sync::Arc;
+
 use primitive_types::{H160, H256, U256};
 use sha3::{Digest, Keccak256};
-use super::{Basic, Backend, ApplyBackend, Apply, Log};
+
+use super::{Apply, ApplyBackend, Backend, Basic, Log};
 
 /// Vivinity value of a memory backend.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -44,15 +47,15 @@ pub struct MemoryAccount {
 
 /// Memory backend, storing all state values in a `BTreeMap` in memory.
 #[derive(Clone, Debug)]
-pub struct MemoryBackend<'vicinity> {
-	vicinity: &'vicinity MemoryVicinity,
+pub struct MemoryBackend {
+	vicinity: Arc<MemoryVicinity>,
 	state: BTreeMap<H160, MemoryAccount>,
 	logs: Vec<Log>,
 }
 
-impl<'vicinity> MemoryBackend<'vicinity> {
+impl MemoryBackend {
 	/// Create a new memory backend.
-	pub fn new(vicinity: &'vicinity MemoryVicinity, state: BTreeMap<H160, MemoryAccount>) -> Self {
+	pub fn new(vicinity: Arc<MemoryVicinity>, state: BTreeMap<H160, MemoryAccount>) -> Self {
 		Self {
 			vicinity,
 			state,
@@ -66,10 +69,11 @@ impl<'vicinity> MemoryBackend<'vicinity> {
 	}
 }
 
-impl<'vicinity> Backend for MemoryBackend<'vicinity> {
-	fn gas_price(&self) -> U256 { self.vicinity.gas_price }
-	fn origin(&self) -> H160 { self.vicinity.origin }
-	fn block_hash(&self, number: U256) -> H256 {
+#[async_trait::async_trait]
+impl Backend for MemoryBackend {
+	async fn gas_price(&self) -> U256 { self.vicinity.gas_price }
+	async fn origin(&self) -> H160 { self.vicinity.origin }
+	async fn block_hash(&self, number: U256) -> H256 {
 		if number >= self.vicinity.block_number ||
 			self.vicinity.block_number - number - U256::one() >= U256::from(self.vicinity.block_hashes.len())
 		{
@@ -79,55 +83,56 @@ impl<'vicinity> Backend for MemoryBackend<'vicinity> {
 			self.vicinity.block_hashes[index]
 		}
 	}
-	fn block_number(&self) -> U256 { self.vicinity.block_number }
-	fn block_coinbase(&self) -> H160 { self.vicinity.block_coinbase }
-	fn block_timestamp(&self) -> U256 { self.vicinity.block_timestamp }
-	fn block_difficulty(&self) -> U256 { self.vicinity.block_difficulty }
-	fn block_gas_limit(&self) -> U256 { self.vicinity.block_gas_limit }
+	async fn block_number(&self) -> U256 { self.vicinity.block_number }
+	async fn block_coinbase(&self) -> H160 { self.vicinity.block_coinbase }
+	async fn block_timestamp(&self) -> U256 { self.vicinity.block_timestamp }
+	async fn block_difficulty(&self) -> U256 { self.vicinity.block_difficulty }
+	async fn block_gas_limit(&self) -> U256 { self.vicinity.block_gas_limit }
 
-	fn chain_id(&self) -> U256 { self.vicinity.chain_id }
+	async fn chain_id(&self) -> U256 { self.vicinity.chain_id }
 
-	fn exists(&self, address: H160) -> bool {
+	async fn exists(&self, address: H160) -> bool {
 		self.state.contains_key(&address)
 	}
 
-	fn basic(&self, address: H160) -> Basic {
+	async fn basic(&self, address: H160) -> Basic {
 		self.state.get(&address).map(|a| {
 			Basic { balance: a.balance, nonce: a.nonce }
 		}).unwrap_or_default()
 	}
 
-	fn code_hash(&self, address: H160) -> H256 {
+	async fn code_hash(&self, address: H160) -> H256 {
 		self.state.get(&address).map(|v| {
 			H256::from_slice(Keccak256::digest(&v.code).as_slice())
 		}).unwrap_or(H256::from_slice(Keccak256::digest(&[]).as_slice()))
 	}
 
-	fn code_size(&self, address: H160) -> usize {
+	async fn code_size(&self, address: H160) -> usize {
 		self.state.get(&address).map(|v| v.code.len()).unwrap_or(0)
 	}
 
-	fn code(&self, address: H160) -> Vec<u8> {
+	async fn code(&self, address: H160) -> Vec<u8> {
 		self.state.get(&address).map(|v| v.code.clone()).unwrap_or_default()
 	}
 
-	fn storage(&self, address: H160, index: H256) -> H256 {
+	async fn storage(&self, address: H160, index: H256) -> H256 {
 		self.state.get(&address)
 			.map(|v| v.storage.get(&index).cloned().unwrap_or(H256::default()))
 			.unwrap_or(H256::default())
 	}
 }
 
-impl<'vicinity> ApplyBackend for MemoryBackend<'vicinity> {
-	fn apply<A, I, L>(
+#[async_trait::async_trait]
+impl ApplyBackend for MemoryBackend {
+	async fn apply<A, I, L>(
 		&mut self,
 		values: A,
 		logs: L,
 		delete_empty: bool,
 	) where
-		A: IntoIterator<Item=Apply<I>>,
-		I: IntoIterator<Item=(H256, H256)>,
-		L: IntoIterator<Item=Log>,
+		A: Sync + Send + IntoIterator<Item=Apply<I>>,
+		I: Sync + Send + IntoIterator<Item=(H256, H256)>,
+		L: Sync + Send + IntoIterator<Item=Log>,
 	{
 		for apply in values {
 			match apply {

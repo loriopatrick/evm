@@ -2,12 +2,13 @@
 //!
 //! Backends store state information of the VM, and exposes it to runtime.
 
-mod memory;
-
-pub use self::memory::{MemoryBackend, MemoryVicinity, MemoryAccount};
-
 use alloc::vec::Vec;
+
 use primitive_types::{H160, H256, U256};
+
+pub use self::memory::{MemoryAccount, MemoryBackend, MemoryVicinity};
+
+mod memory;
 
 /// Basic account information.
 #[derive(Clone, Eq, PartialEq, Debug, Default)]
@@ -54,50 +55,52 @@ pub enum Apply<I> {
 }
 
 /// EVM backend.
-pub trait Backend {
+#[async_trait::async_trait]
+pub trait Backend: Send + Sync + 'static {
 	/// Gas price.
-	fn gas_price(&self) -> U256;
+	async fn gas_price(&self) -> U256;
 	/// Origin.
-	fn origin(&self) -> H160;
+	async fn origin(&self) -> H160;
 	/// Environmental block hash.
-	fn block_hash(&self, number: U256) -> H256;
+	async fn block_hash(&self, number: U256) -> H256;
 	/// Environmental block number.
-	fn block_number(&self) -> U256;
+	async fn block_number(&self) -> U256;
 	/// Environmental coinbase.
-	fn block_coinbase(&self) -> H160;
+	async fn block_coinbase(&self) -> H160;
 	/// Environmental block timestamp.
-	fn block_timestamp(&self) -> U256;
+	async fn block_timestamp(&self) -> U256;
 	/// Environmental block difficulty.
-	fn block_difficulty(&self) -> U256;
+	async fn block_difficulty(&self) -> U256;
 	/// Environmental block gas limit.
-	fn block_gas_limit(&self) -> U256;
+	async fn block_gas_limit(&self) -> U256;
 	/// Environmental chain ID.
-	fn chain_id(&self) -> U256;
+	async fn chain_id(&self) -> U256;
 
 	/// Whether account at address exists.
-	fn exists(&self, address: H160) -> bool;
+	async fn exists(&self, address: H160) -> bool;
 	/// Get basic account information.
-	fn basic(&self, address: H160) -> Basic;
+	async fn basic(&self, address: H160) -> Basic;
 	/// Get account code hash.
-	fn code_hash(&self, address: H160) -> H256;
+	async fn code_hash(&self, address: H160) -> H256;
 	/// Get account code size.
-	fn code_size(&self, address: H160) -> usize;
+	async fn code_size(&self, address: H160) -> usize;
 	/// Get account code.
-	fn code(&self, address: H160) -> Vec<u8>;
+	async fn code(&self, address: H160) -> Vec<u8>;
 	/// Get storage value of address at index.
-	fn storage(&self, address: H160, index: H256) -> H256;
+	async fn storage(&self, address: H160, index: H256) -> H256;
 }
 
 /// EVM backend that can apply changes.
+#[async_trait::async_trait]
 pub trait ApplyBackend {
 	/// Apply given values and logs at backend.
-	fn apply<A, I, L>(
+	async fn apply<A, I, L>(
 		&mut self,
 		values: A,
 		logs: L,
 		delete_empty: bool,
 	) where
-		A: IntoIterator<Item=Apply<I>>,
-		I: IntoIterator<Item=(H256, H256)>,
-		L: IntoIterator<Item=Log>;
+		A: Sync + Send + IntoIterator<Item=Apply<I>>,
+		I: Sync + Send + IntoIterator<Item=(H256, H256)>,
+		L: Sync + Send + IntoIterator<Item=Log>;
 }

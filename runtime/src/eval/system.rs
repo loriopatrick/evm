@@ -1,9 +1,12 @@
-use core::cmp::min;
 use alloc::vec::Vec;
+use core::cmp::min;
+
 use primitive_types::{H256, U256};
-use sha3::{Keccak256, Digest};
-use crate::{Runtime, ExitError, Handler, Capture, Transfer, ExitReason,
-			CreateScheme, CallScheme, Context, ExitSucceed, ExitFatal};
+use sha3::{Digest, Keccak256};
+
+use crate::{CallScheme, Capture, Context, CreateScheme, ExitError, ExitFatal,
+			ExitReason, ExitSucceed, Handler, Runtime, Transfer};
+
 use super::Control;
 
 pub fn sha3<H: Handler>(runtime: &mut Runtime) -> Control<H> {
@@ -25,8 +28,8 @@ pub fn sha3<H: Handler>(runtime: &mut Runtime) -> Control<H> {
 	Control::Continue
 }
 
-pub fn chainid<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.chain_id());
+pub async fn chainid<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.chain_id().await);
 
 	Control::Continue
 }
@@ -38,21 +41,21 @@ pub fn address<H: Handler>(runtime: &mut Runtime) -> Control<H> {
 	Control::Continue
 }
 
-pub fn balance<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn balance<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop!(runtime, address);
-	push_u256!(runtime, handler.balance(address.into()));
+	push_u256!(runtime, handler.balance(address.into()).await);
 
 	Control::Continue
 }
 
-pub fn selfbalance<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.balance(runtime.context.address));
+pub async fn selfbalance<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.balance(runtime.context.address).await);
 
 	Control::Continue
 }
 
-pub fn origin<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	let ret = H256::from(handler.origin());
+pub async fn origin<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	let ret = H256::from(handler.origin().await);
 	push!(runtime, ret);
 
 	Control::Continue
@@ -73,29 +76,29 @@ pub fn callvalue<H: Handler>(runtime: &mut Runtime) -> Control<H> {
 	Control::Continue
 }
 
-pub fn gasprice<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn gasprice<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	let mut ret = H256::default();
-	handler.gas_price().to_big_endian(&mut ret[..]);
+	handler.gas_price().await.to_big_endian(&mut ret[..]);
 	push!(runtime, ret);
 
 	Control::Continue
 }
 
-pub fn extcodesize<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn extcodesize<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop!(runtime, address);
-	push_u256!(runtime, handler.code_size(address.into()));
+	push_u256!(runtime, handler.code_size(address.into()).await);
 
 	Control::Continue
 }
 
-pub fn extcodehash<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn extcodehash<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop!(runtime, address);
-	push!(runtime, handler.code_hash(address.into()));
+	push!(runtime, handler.code_hash(address.into()).await);
 
 	Control::Continue
 }
 
-pub fn extcodecopy<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn extcodecopy<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop!(runtime, address);
 	pop_u256!(runtime, memory_offset, code_offset, len);
 
@@ -104,7 +107,7 @@ pub fn extcodecopy<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H>
 		memory_offset,
 		code_offset,
 		len,
-		&handler.code(address.into())
+		&handler.code(address.into()).await
 	) {
 		Ok(()) => (),
 		Err(e) => return Control::Exit(e.into()),
@@ -137,48 +140,48 @@ pub fn returndatacopy<H: Handler>(runtime: &mut Runtime) -> Control<H> {
 	}
 }
 
-pub fn blockhash<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn blockhash<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop_u256!(runtime, number);
-	push!(runtime, handler.block_hash(number));
+	push!(runtime, handler.block_hash(number).await);
 
 	Control::Continue
 }
 
-pub fn coinbase<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push!(runtime, handler.block_coinbase().into());
+pub async fn coinbase<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push!(runtime, handler.block_coinbase().await.into());
 	Control::Continue
 }
 
-pub fn timestamp<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.block_timestamp());
+pub async fn timestamp<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.block_timestamp().await);
 	Control::Continue
 }
 
-pub fn number<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.block_number());
+pub async fn number<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.block_number().await);
 	Control::Continue
 }
 
-pub fn difficulty<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.block_difficulty());
+pub async fn difficulty<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.block_difficulty().await);
 	Control::Continue
 }
 
-pub fn gaslimit<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
-	push_u256!(runtime, handler.block_gas_limit());
+pub async fn gaslimit<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+	push_u256!(runtime, handler.block_gas_limit().await);
 	Control::Continue
 }
 
-pub fn sload<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
+pub async fn sload<H: Handler>(runtime: &mut Runtime, handler: &H) -> Control<H> {
 	pop!(runtime, index);
-	push!(runtime, handler.storage(runtime.context.address, index));
+	push!(runtime, handler.storage(runtime.context.address, index).await);
 
 	Control::Continue
 }
 
-pub fn sstore<H: Handler>(runtime: &mut Runtime, handler: &mut H) -> Control<H> {
+pub async fn sstore<H: Handler>(runtime: &mut Runtime, handler: &mut H) -> Control<H> {
 	pop!(runtime, index, value);
-	match handler.set_storage(runtime.context.address, index, value) {
+	match handler.set_storage(runtime.context.address, index, value).await {
 		Ok(()) => Control::Continue,
 		Err(e) => Control::Exit(e.into()),
 	}
@@ -217,10 +220,10 @@ pub fn log<H: Handler>(runtime: &mut Runtime, n: u8, handler: &mut H) -> Control
 	}
 }
 
-pub fn suicide<H: Handler>(runtime: &mut Runtime, handler: &mut H) -> Control<H> {
+pub async fn suicide<H: Handler>(runtime: &mut Runtime, handler: &mut H) -> Control<H> {
 	pop!(runtime, target);
 
-	match handler.mark_delete(runtime.context.address, target.into()) {
+	match handler.mark_delete(runtime.context.address, target.into()).await {
 		Ok(()) => (),
 		Err(e) => return Control::Exit(e.into()),
 	}
@@ -228,7 +231,7 @@ pub fn suicide<H: Handler>(runtime: &mut Runtime, handler: &mut H) -> Control<H>
 	Control::Exit(ExitSucceed::Suicided.into())
 }
 
-pub fn create<H: Handler>(
+pub async fn create<H: Handler>(
 	runtime: &mut Runtime,
 	is_create2: bool,
 	handler: &mut H,
@@ -261,7 +264,7 @@ pub fn create<H: Handler>(
 		}
 	};
 
-	match handler.create(runtime.context.address, scheme, value, code, None) {
+	match handler.create(runtime.context.address, scheme, value, code, None).await {
 		Capture::Exit((reason, address, return_data)) => {
 			runtime.return_data_buffer = return_data;
 			let create_address: H256 = address.map(|a| a.into()).unwrap_or_default();
@@ -292,7 +295,7 @@ pub fn create<H: Handler>(
 	}
 }
 
-pub fn call<'config, H: Handler>(
+pub async fn call<'config, H: Handler>(
 	runtime: &mut Runtime,
 	scheme: CallScheme,
 	handler: &mut H,
@@ -365,7 +368,7 @@ pub fn call<'config, H: Handler>(
 		None
 	};
 
-	match handler.call(to.into(), transfer, input, gas, scheme == CallScheme::StaticCall, context) {
+	match handler.call(to.into(), transfer, input, gas, scheme == CallScheme::StaticCall, context).await {
 		Capture::Exit((reason, return_data)) => {
 			runtime.return_data_buffer = return_data;
 			let target_len = min(out_len, U256::from(runtime.return_data_buffer.len()));

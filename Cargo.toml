@@ -17,6 +17,7 @@ sha3 = { version = "0.8", default-features = false }
 rlp = { version = "0.4", default-features = false }
 primitive-types = { version = "0.7", default-features = false, features = ["rlp"] }
 serde = { version = "1.0", default-features = false, features = ["derive"], optional = true }
+async-trait = "0.1.41"
 
 [features]
 default = ["std"]

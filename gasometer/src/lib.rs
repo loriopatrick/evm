@@ -5,15 +5,18 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use core::cmp::max;
+use std::sync::Arc;
+
+use primitive_types::{H160, H256, U256};
+
+use evm_core::{ExitError, ExternalOpcode, Opcode, Stack};
+use evm_runtime::{Config, Handler};
+
 mod consts;
 mod costs;
 mod memory;
 mod utils;
-
-use core::cmp::max;
-use primitive_types::{H160, H256, U256};
-use evm_core::{ExternalOpcode, Opcode, ExitError, Stack};
-use evm_runtime::{Handler, Config};
 
 macro_rules! try_or_fail {
 	( $inner:expr, $e:expr ) => (
@@ -29,18 +32,18 @@ macro_rules! try_or_fail {
 
 /// EVM gasometer.
 #[derive(Clone)]
-pub struct Gasometer<'config> {
+pub struct Gasometer {
 	gas_limit: usize,
-	config: &'config Config,
-	inner: Result<Inner<'config>, ExitError>
+	config: Arc<Config>,
+	inner: Result<Inner, ExitError>
 }
 
-impl<'config> Gasometer<'config> {
+impl Gasometer {
 	/// Create a new gasometer with given gas limit and config.
-	pub fn new(gas_limit: usize, config: &'config Config) -> Self {
+	pub fn new(gas_limit: usize, config: Arc<Config>) -> Self {
 		Self {
 			gas_limit,
-			config,
+			config: config.clone(),
 			inner: Ok(Inner {
 				memory_cost: 0,
 				used_gas: 0,
@@ -52,13 +55,13 @@ impl<'config> Gasometer<'config> {
 
 	fn inner_mut(
 		&mut self
-	) -> Result<&mut Inner<'config>, ExitError> {
+	) -> Result<&mut Inner, ExitError> {
 		self.inner.as_mut().map_err(|e| *e)
 	}
 
 	/// Reference of the config.
-	pub fn config(&self) -> &'config Config {
-		self.config
+	pub fn config(&self) -> Arc<Config> {
+		self.config.clone()
 	}
 
 	/// Remaining gas.
@@ -219,7 +222,7 @@ pub fn create_transaction_cost(
 }
 
 /// Calculate the opcode cost.
-pub fn opcode_cost<H: Handler>(
+pub async fn opcode_cost<H: Handler>(
 	address: H160,
 	opcode: Result<Opcode, ExternalOpcode>,
 	stack: &Stack,
@@ -275,11 +278,11 @@ pub fn opcode_cost<H: Handler>(
 		Err(ExternalOpcode::CallCode) => GasCost::CallCode {
 			value: U256::from_big_endian(&stack.peek(2)?[..]),
 			gas: U256::from_big_endian(&stack.peek(0)?[..]),
-			target_exists: handler.exists(stack.peek(1)?.into()),
+			target_exists: handler.exists(stack.peek(1)?.into()).await,
 		},
 		Err(ExternalOpcode::StaticCall) => GasCost::StaticCall {
 			gas: U256::from_big_endian(&stack.peek(0)?[..]),
-			target_exists: handler.exists(stack.peek(1)?.into()),
+			target_exists: handler.exists(stack.peek(1)?.into()).await,
 		},
 		Err(ExternalOpcode::Sha3) => GasCost::Sha3 {
 			len: U256::from_big_endian(&stack.peek(1)?[..]),
@@ -298,7 +301,7 @@ pub fn opcode_cost<H: Handler>(
 
 		Err(ExternalOpcode::DelegateCall) if config.has_delegate_call => GasCost::DelegateCall {
 			gas: U256::from_big_endian(&stack.peek(0)?[..]),
-			target_exists: handler.exists(stack.peek(1)?.into()),
+			target_exists: handler.exists(stack.peek(1)?.into()).await,
 		},
 		Err(ExternalOpcode::DelegateCall) => GasCost::Invalid,
 
@@ -313,8 +316,8 @@ pub fn opcode_cost<H: Handler>(
 			let value = stack.peek(1)?;
 
 			GasCost::SStore {
-				original: handler.original_storage(address, index),
-				current: handler.storage(address, index),
+				original: handler.original_storage(address, index).await,
+				current: handler.storage(address, index).await,
 				new: value,
 			}
 		},
@@ -327,8 +330,8 @@ pub fn opcode_cost<H: Handler>(
 			len: U256::from_big_endian(&stack.peek(2)?[..]),
 		},
 		Err(ExternalOpcode::Suicide) if !is_static => GasCost::Suicide {
-			value: handler.balance(address),
-			target_exists: handler.exists(stack.peek(0)?.into()),
+			value: handler.balance(address).await,
+			target_exists: handler.exists(stack.peek(0)?.into()).await,
 			already_removed: handler.deleted(address),
 		},
 		Err(ExternalOpcode::Call)
@@ -337,7 +340,7 @@ pub fn opcode_cost<H: Handler>(
 			GasCost::Call {
 				value: U256::from_big_endian(&stack.peek(2)?[..]),
 				gas: U256::from_big_endian(&stack.peek(0)?[..]),
-				target_exists: handler.exists(stack.peek(1)?.into()),
+				target_exists: handler.exists(stack.peek(1)?.into()).await,
 			},
 
 		Ok(Opcode::Invalid) => GasCost::Invalid,
@@ -406,14 +409,14 @@ pub fn opcode_cost<H: Handler>(
 }
 
 #[derive(Clone)]
-struct Inner<'config> {
+struct Inner {
 	memory_cost: usize,
 	used_gas: usize,
 	refunded_gas: isize,
-	config: &'config Config,
+	config: Arc<Config>,
 }
 
-impl<'config> Inner<'config> {
+impl Inner {
 	fn memory_cost(
 		&self,
 		memory: MemoryCost,
@@ -448,10 +451,10 @@ impl<'config> Inner<'config> {
 		after_gas: usize,
 	) -> Result<(), ExitError> {
 		match cost {
-			GasCost::Call { gas, .. } => costs::call_extra_check(gas, after_gas, self.config),
-			GasCost::CallCode { gas, .. } => costs::call_extra_check(gas, after_gas, self.config),
-			GasCost::DelegateCall { gas, .. } => costs::call_extra_check(gas, after_gas, self.config),
-			GasCost::StaticCall { gas, .. } => costs::call_extra_check(gas, after_gas, self.config),
+			GasCost::Call { gas, .. } => costs::call_extra_check(gas, after_gas, &self.config),
+			GasCost::CallCode { gas, .. } => costs::call_extra_check(gas, after_gas, &self.config),
+			GasCost::DelegateCall { gas, .. } => costs::call_extra_check(gas, after_gas, &self.config),
+			GasCost::StaticCall { gas, .. } => costs::call_extra_check(gas, after_gas, &self.config),
 			_ => Ok(()),
 		}
 	}
@@ -463,23 +466,23 @@ impl<'config> Inner<'config> {
 	) -> Result<usize, ExitError> {
 		Ok(match cost {
 			GasCost::Call { value, target_exists, .. } =>
-				costs::call_cost(value, true, true, !target_exists, self.config),
+				costs::call_cost(value, true, true, !target_exists, &self.config),
 			GasCost::CallCode { value, target_exists, .. } =>
-				costs::call_cost(value, true, false, !target_exists, self.config),
+				costs::call_cost(value, true, false, !target_exists, &self.config),
 			GasCost::DelegateCall { target_exists, .. } =>
-				costs::call_cost(U256::zero(), false, false, !target_exists, self.config),
+				costs::call_cost(U256::zero(), false, false, !target_exists, &self.config),
 			GasCost::StaticCall { target_exists, .. } =>
-				costs::call_cost(U256::zero(), false, true, !target_exists, self.config),
+				costs::call_cost(U256::zero(), false, true, !target_exists, &self.config),
 			GasCost::Suicide { value, target_exists, .. } =>
-				costs::suicide_cost(value, target_exists, self.config),
+				costs::suicide_cost(value, target_exists, &self.config),
 			GasCost::SStore { original, current, new } =>
-				costs::sstore_cost(original, current, new, gas, self.config)?,
+				costs::sstore_cost(original, current, new, gas, &self.config)?,
 
 			GasCost::Sha3 { len } => costs::sha3_cost(len)?,
 			GasCost::Log { n, len } => costs::log_cost(n, len)?,
-			GasCost::ExtCodeCopy { len } => costs::extcodecopy_cost(len, self.config)?,
+			GasCost::ExtCodeCopy { len } => costs::extcodecopy_cost(len, &self.config)?,
 			GasCost::VeryLowCopy { len } => costs::verylowcopy_cost(len)?,
-			GasCost::Exp { power } => costs::exp_cost(power, self.config)?,
+			GasCost::Exp { power } => costs::exp_cost(power, &self.config)?,
 			GasCost::Create => consts::G_CREATE,
 			GasCost::Create2 { len } => costs::create2_cost(len)?,
 			GasCost::JumpDest => consts::G_JUMPDEST,
@@ -506,7 +509,7 @@ impl<'config> Inner<'config> {
 	) -> isize {
 		match cost {
 			GasCost::SStore { original, current, new } =>
-				costs::sstore_refund(original, current, new, self.config),
+				costs::sstore_refund(original, current, new, &self.config),
 			GasCost::Suicide { already_removed, .. } =>
 				costs::suicide_refund(already_removed),
 			_ => 0,

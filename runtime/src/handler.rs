@@ -1,7 +1,9 @@
 use alloc::vec::Vec;
+
 use primitive_types::{H160, H256, U256};
-use crate::{Capture, Stack, ExitError, Opcode, ExternalOpcode,
-			CreateScheme, Context, Machine, ExitReason};
+
+use crate::{Capture, Context, CreateScheme, ExitError, ExitReason,
+			ExternalOpcode, Machine, Opcode, Stack};
 
 /// Transfer from source to target, with given value.
 #[derive(Clone, Debug)]
@@ -15,6 +17,7 @@ pub struct Transfer {
 }
 
 /// EVM context handler.
+#[async_trait::async_trait]
 pub trait Handler {
 	/// Type of `CREATE` interrupt.
 	type CreateInterrupt;
@@ -26,52 +29,52 @@ pub trait Handler {
 	type CallFeedback;
 
 	/// Get balance of address.
-	fn balance(&self, address: H160) -> U256;
+	async fn balance(&self, address: H160) -> U256;
 	/// Get code size of address.
-	fn code_size(&self, address: H160) -> U256;
+	async fn code_size(&self, address: H160) -> U256;
 	/// Get code hash of address.
-	fn code_hash(&self, address: H160) -> H256;
+	async fn code_hash(&self, address: H160) -> H256;
 	/// Get code of address.
-	fn code(&self, address: H160) -> Vec<u8>;
+	async fn code(&self, address: H160) -> Vec<u8>;
 	/// Get storage value of address at index.
-	fn storage(&self, address: H160, index: H256) -> H256;
+	async fn storage(&self, address: H160, index: H256) -> H256;
 	/// Get original storage value of address at index.
-	fn original_storage(&self, address: H160, index: H256) -> H256;
+	async fn original_storage(&self, address: H160, index: H256) -> H256;
 
 	/// Get the gas left value.
 	fn gas_left(&self) -> U256;
 	/// Get the gas price value.
-	fn gas_price(&self) -> U256;
+	async fn gas_price(&self) -> U256;
 	/// Get execution origin.
-	fn origin(&self) -> H160;
+	async fn origin(&self) -> H160;
 	/// Get environmental block hash.
-	fn block_hash(&self, number: U256) -> H256;
+	async fn block_hash(&self, number: U256) -> H256;
 	/// Get environmental block number.
-	fn block_number(&self) -> U256;
+	async fn block_number(&self) -> U256;
 	/// Get environmental coinbase.
-	fn block_coinbase(&self) -> H160;
+	async fn block_coinbase(&self) -> H160;
 	/// Get environmental block timestamp.
-	fn block_timestamp(&self) -> U256;
+	async fn block_timestamp(&self) -> U256;
 	/// Get environmental block difficulty.
-	fn block_difficulty(&self) -> U256;
+	async fn block_difficulty(&self) -> U256;
 	/// Get environmental gas limit.
-	fn block_gas_limit(&self) -> U256;
+	async fn block_gas_limit(&self) -> U256;
 	/// Get environmental chain ID.
-	fn chain_id(&self) -> U256;
+	async fn chain_id(&self) -> U256;
 
 	/// Check whether an address exists.
-	fn exists(&self, address: H160) -> bool;
+	async fn exists(&self, address: H160) -> bool;
 	/// Check whether an address has already been deleted.
 	fn deleted(&self, address: H160) -> bool;
 
 	/// Set storage value of address at index.
-	fn set_storage(&mut self, address: H160, index: H256, value: H256) -> Result<(), ExitError>;
+	async fn set_storage(&mut self, address: H160, index: H256, value: H256) -> Result<(), ExitError>;
 	/// Create a log owned by address with given topics and data.
 	fn log(&mut self, address: H160, topcis: Vec<H256>, data: Vec<u8>) -> Result<(), ExitError>;
 	/// Mark an address to be deleted, with funds transferred to target.
-	fn mark_delete(&mut self, address: H160, target: H160) -> Result<(), ExitError>;
+	async fn mark_delete(&mut self, address: H160, target: H160) -> Result<(), ExitError>;
 	/// Invoke a create operation.
-	fn create(
+	async fn create(
 		&mut self,
 		caller: H160,
 		scheme: CreateScheme,
@@ -87,7 +90,7 @@ pub trait Handler {
 		Ok(())
 	}
 	/// Invoke a call operation.
-	fn call(
+	async fn call(
 		&mut self,
 		code_address: H160,
 		transfer: Option<Transfer>,
@@ -105,7 +108,7 @@ pub trait Handler {
 	}
 
 	/// Pre-validation step for the runtime.
-	fn pre_validate(
+	async fn pre_validate(
 		&mut self,
 		context: &Context,
 		opcode: Result<Opcode, ExternalOpcode>,
