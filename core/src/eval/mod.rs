@@ -17,13 +17,6 @@ pub enum Control {
 }
 
 pub fn eval(state: &mut Machine, opcode: Opcode, position: usize) -> Control {
-	log::trace!("{}: {:?} | {:?} {:?} {:?} {:?}", position, opcode,
-		state.stack.peek(0),
-		state.stack.peek(1),
-		state.stack.peek(2),
-		state.stack.peek(3)
-	);
-
 	match opcode {
 		Opcode::Stop => Control::Exit(ExitSucceed::Stopped.into()),
 		Opcode::Add => op2_u256_tuple!(state, overflowing_add),

@@ -762,6 +762,8 @@ impl<B: Backend> Handler for StackExecutor<B> {
 		opcode: Result<Opcode, ExternalOpcode>,
 		stack: &Stack
 	) -> Result<(), ExitError> {
+		log::info!("{:?} {:?}", context.address, opcode);
+
 		let (gas_cost, memory_cost) = gasometer::opcode_cost(
 			context.address, opcode, stack, self.is_static, &self.config, self
 		).await?;
