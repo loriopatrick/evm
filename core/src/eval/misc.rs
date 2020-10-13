@@ -200,6 +200,6 @@ pub fn revert(state: &mut Machine) -> Control {
 	pop_u256!(state, start, len);
 	try_or_fail!(state.memory.resize_offset(start, len));
 	state.return_range = start..(start + len);
-	log::trace!("Revert: {}", hex::encode(state.memory.get(start.as_usize(), len.as_usize())));
+	log::info!("Revert: {}", hex::encode(state.memory.get(start.as_usize(), len.as_usize())));
 	Control::Exit(ExitRevert::Reverted.into())
 }
