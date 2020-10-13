@@ -1,7 +1,10 @@
 use core::cmp::min;
+
 use primitive_types::{H256, U256};
+
+use crate::{ExitError, ExitFatal, ExitRevert, ExitSucceed, Machine};
+
 use super::Control;
-use crate::{Machine, ExitError, ExitSucceed, ExitFatal, ExitRevert};
 
 pub fn codesize(state: &mut Machine) -> Control {
 	let size = U256::from(state.code.len());
@@ -197,5 +200,6 @@ pub fn revert(state: &mut Machine) -> Control {
 	pop_u256!(state, start, len);
 	try_or_fail!(state.memory.resize_offset(start, len));
 	state.return_range = start..(start + len);
+	log::trace!("Revert: {}", hex::encode(state.memory.get(start.as_usize(), len.as_usize())));
 	Control::Exit(ExitRevert::Reverted.into())
 }
